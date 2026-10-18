@@ -914,3 +914,83 @@ func TestPlace10Plus4ImbalanceTiebreak(t *testing.T) {
 		})
 	}
 }
+
+func TestFreeSlotsBeatsDeadband(t *testing.T) {
+	if freeSlotsBeats(105, 100, 0) != true {
+		t.Fatal("M=0: 105 must beat 100")
+	}
+	if freeSlotsBeats(100, 105, 0) {
+		t.Fatal("M=0: 100 must not beat 105")
+	}
+	if freeSlotsBeats(100, 100, 0) {
+		t.Fatal("M=0: equal is a tie")
+	}
+	if freeSlotsBeats(105, 100, 10) {
+		t.Fatal("M=10: |Δ|=5 is a tie")
+	}
+	if !freeSlotsBeats(200, 100, 10) {
+		t.Fatal("M=10: |Δ|=100 must still beat")
+	}
+	if !freeSlotsBeats(101, 100, -3) {
+		t.Fatal("negative M treated as 0: 101 must beat 100")
+	}
+}
+
+func placeFirstShardNode(t *testing.T, topo *Topology, m int) string {
+	t.Helper()
+	res, err := topo.Place(1, "c1", []int{0}, Constraints{FreeSlotsDeadband: m}, PlaceStrict)
+	if err != nil {
+		t.Fatalf("Place M=%d: %v", m, err)
+	}
+	d, ok := res.Destinations[0]
+	if !ok {
+		t.Fatal("missing shard 0")
+	}
+	return d.Node
+}
+
+// TestFreeSlotsDeadbandDefersToLiveShards: two nodes, empty this-volume.
+// b has slightly more freeSlots but more live shards. M=0 follows freeSlots
+// (b); M covering the gap follows liveShards (a). Sorted-id would always pick a.
+func TestFreeSlotsDeadbandDefersToLiveShards(t *testing.T) {
+	build := func() *Topology {
+		topo := NewTopology()
+		a := topo.AddNode("a:8080", "dc1", "dc1:rack0", 100)
+		a.AddDisk(0, "", 100, 10)
+		b := topo.AddNode("b:8081", "dc1", "dc1:rack0", 105)
+		b.AddDisk(0, "", 105, 50)
+		return topo
+	}
+	if got := placeFirstShardNode(t, build(), 0); got != "b:8081" {
+		t.Fatalf("M=0: got %s, want b (strict freeSlots)", got)
+	}
+	if got := placeFirstShardNode(t, build(), 10); got != "a:8080" {
+		t.Fatalf("M=10: got %s, want a (liveShards remainder)", got)
+	}
+}
+
+// TestFreeSlotsDeadbandZeroExactTieUsesLiveShards: equal freeSlots, M=0
+// remainder is liveShards, not the lower sorted id.
+func TestFreeSlotsDeadbandZeroExactTieUsesLiveShards(t *testing.T) {
+	topo := NewTopology()
+	a := topo.AddNode("a:8080", "dc1", "dc1:rack0", 100)
+	a.AddDisk(0, "", 100, 50)
+	b := topo.AddNode("b:8081", "dc1", "dc1:rack0", 100)
+	b.AddDisk(0, "", 100, 10)
+	if got := placeFirstShardNode(t, topo, 0); got != "b:8081" {
+		t.Fatalf("equal freeSlots M=0: got %s, want b (lower liveShards)", got)
+	}
+}
+
+// TestFreeSlotsDeadbandStillHonorsLargeGap: gap above M still follows freeSlots
+// even if that node is fatter on liveShards.
+func TestFreeSlotsDeadbandStillHonorsLargeGap(t *testing.T) {
+	topo := NewTopology()
+	a := topo.AddNode("a:8080", "dc1", "dc1:rack0", 100)
+	a.AddDisk(0, "", 100, 10)
+	b := topo.AddNode("b:8081", "dc1", "dc1:rack0", 200)
+	b.AddDisk(0, "", 200, 80)
+	if got := placeFirstShardNode(t, topo, 10); got != "b:8081" {
+		t.Fatalf("M=10 gap=100: got %s, want b (freeSlots still wins)", got)
+	}
+}
