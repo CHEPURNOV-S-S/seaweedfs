@@ -518,10 +518,8 @@ func pickNodeInRackEligible(r *rack, vk volKey, rp *super_block.ReplicaPlacement
 			better = mCount < bestMCount
 		case count != bestNCount:
 			better = count < bestNCount
-		case freeSlotsBeats(node.freeSlots, bestNFree, freeSlotsDeadband):
-			better = true
-		case freeSlotsBeats(bestNFree, node.freeSlots, freeSlotsDeadband):
-			better = false
+		case absIntDiff(node.freeSlots, bestNFree) > freeSlotsDeadband:
+			better = node.freeSlots > bestNFree
 		default:
 			better = nScore < bestNScore
 		}
@@ -532,20 +530,11 @@ func pickNodeInRackEligible(r *rack, vk volKey, rp *super_block.ReplicaPlacement
 	return best
 }
 
-// freeSlotsBeats reports whether a has strictly more freeSlots than b after
-// applying deadband m. |a-b| ≤ m is a tie. Negative m is treated as 0.
-func freeSlotsBeats(a, b, m int) bool {
-	if m < 0 {
-		m = 0
+func absIntDiff(a, b int) int {
+	if a > b {
+		return a - b
 	}
-	d := a - b
-	if d < 0 {
-		d = -d
-	}
-	if d <= m {
-		return false
-	}
-	return a > b
+	return b - a
 }
 
 // pickBestDiskEligible chooses the best eligible disk on a node, ranking

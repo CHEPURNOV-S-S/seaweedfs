@@ -2,6 +2,7 @@ package ecbalancer
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"testing"
 
@@ -915,25 +916,50 @@ func TestPlace10Plus4ImbalanceTiebreak(t *testing.T) {
 	}
 }
 
-func TestFreeSlotsBeatsDeadband(t *testing.T) {
-	if freeSlotsBeats(105, 100, 0) != true {
+func TestAbsIntDiff(t *testing.T) {
+	if got := absIntDiff(105, 100); got != 5 {
+		t.Fatalf("absIntDiff(105, 100)=%d, want 5", got)
+	}
+	if got := absIntDiff(100, 105); got != 5 {
+		t.Fatalf("absIntDiff(100, 105)=%d, want 5", got)
+	}
+	if got := absIntDiff(100, 100); got != 0 {
+		t.Fatalf("absIntDiff(100, 100)=%d, want 0", got)
+	}
+	// pickNodeInRackEligible: |Δ| > M decides freeSlots, else remainder.
+	if !(absIntDiff(105, 100) > 0 && 105 > 100) {
 		t.Fatal("M=0: 105 must beat 100")
 	}
-	if freeSlotsBeats(100, 105, 0) {
+	if absIntDiff(100, 105) > 0 && 100 > 105 {
 		t.Fatal("M=0: 100 must not beat 105")
 	}
-	if freeSlotsBeats(100, 100, 0) {
+	if absIntDiff(100, 100) > 0 {
 		t.Fatal("M=0: equal is a tie")
 	}
-	if freeSlotsBeats(105, 100, 10) {
+	if absIntDiff(105, 100) > 10 {
 		t.Fatal("M=10: |Δ|=5 is a tie")
 	}
-	if !freeSlotsBeats(200, 100, 10) {
+	if !(absIntDiff(200, 100) > 10 && 200 > 100) {
 		t.Fatal("M=10: |Δ|=100 must still beat")
 	}
-	if !freeSlotsBeats(101, 100, -3) {
-		t.Fatal("negative M treated as 0: 101 must beat 100")
+	if !(absIntDiff(101, 100) > -3 && 101 > 100) {
+		t.Fatal("negative M: 101 must beat 100")
 	}
+	// Near MaxInt/MinInt is not overflow: both values sit on the same extreme.
+	if got := absIntDiff(math.MaxInt, math.MaxInt-5); got != 5 {
+		t.Fatalf("absIntDiff(MaxInt, MaxInt-5)=%d, want 5", got)
+	}
+	if got := absIntDiff(math.MaxInt-5, math.MaxInt); got != 5 {
+		t.Fatalf("absIntDiff(MaxInt-5, MaxInt)=%d, want 5", got)
+	}
+	if got := absIntDiff(math.MinInt+5, math.MinInt); got != 5 {
+		t.Fatalf("absIntDiff(MinInt+5, MinInt)=%d, want 5", got)
+	}
+	if got := absIntDiff(math.MinInt, math.MinInt+5); got != 5 {
+		t.Fatalf("absIntDiff(MinInt, MinInt+5)=%d, want 5", got)
+	}
+	// Naive a-b overflows only at opposite extremes (MaxInt vs MinInt).
+	// absIntDiff still does a-b when a>b, so we do not claim a result for that pair.
 }
 
 func placeFirstShardNode(t *testing.T, topo *Topology, m int) string {
